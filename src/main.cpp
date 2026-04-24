@@ -8,16 +8,32 @@
 // Includes
 #include "shader.hpp"
 #include "trimesh.hpp"
+#include <cmath>
 #include <cstring> // memcpy
-
 // Constants
 #define WIN_WIDTH 500
 #define WIN_HEIGHT 500
+
+enum class KeyState {
+  NONE,
+  MOVE_FORWARD,
+  MOVE_BACKWARD,
+  MOVE_LEFT,
+  MOVE_RIGHT
+};
 
 class Mat4x4 {
 public:
   float m[16];
 
+  /*
+  void make_identity(){
+          m[0] = 1.f;  m[4] = 0.f;  m[8]  = 0.f;  m[12] = 0.f;
+          m[1] = 0.f;  m[5] = 1.f;  m[9]  = 0.f;  m[13] = 0.f;
+          m[2] = 0.f;  m[6] = 0.f;  m[10] = 1.f;  m[14] = 0.f;
+          m[3] = 0.f;  m[7] = 0.f;  m[11] = 0.f;  m[15] = 1.f;
+  }
+  */
   Mat4x4() { // Default: Identity
     m[0] = 1.f;
     m[4] = 0.f;
@@ -76,11 +92,64 @@ static inline const Vec3f operator*(const Mat4x4& m, const Vec3f& v) {
   return r;
 }
 
+static inline const Vec3f operator+(const Vec3f& u, const Vec3f& v) {
+  Vec3f r(
+    u[0] + v[0],
+    u[1] + v[1],
+    u[2] + v[2]
+  );
+  return r;
+}
+
+static inline const Vec3f operator-(const Vec3f& u, const Vec3f& v) {
+  Vec3f r(
+    u[0] - v[0],
+    u[1] - v[1],
+    u[2] - v[2]
+  );
+  return r;
+}
+
+static inline const float dot_product(const Vec3f& u, const Vec3f& v) {
+  return u[0] * v[0] +
+         u[1] * v[1] +
+         u[2] * v[2];
+}
+
+static inline const Vec3f cross_product(const Vec3f& u, const Vec3f& v) {
+  Vec3f r(
+    u[1] * v[2] - u[2] * v[1],
+    u[2] * v[0] - u[0] * v[2],
+    u[0] * v[1] - u[1] * v[0]
+  );
+  return r;
+}
+
+static inline const float magnitude(const Vec3f& v) {
+  return sqrt(pow(v[0], 2) + pow(v[1], 2) + pow(v[2], 2));
+}
+
+static inline const Vec3f normalize(const Vec3f& v) {
+  float mag = magnitude(v);
+
+  if (mag == 0) {
+    mag = 0.0001;
+  }
+
+  Vec3f r(
+    v[0] / mag,
+    v[1] / mag,
+    v[2] / mag
+  );
+  return r;
+}
+
 
 //
 //	Global state variables
 //
 namespace Globals {
+enum KeyState key_state = KeyState::NONE;
 double cursorX, cursorY;     // cursor positions
 float win_width, win_height; // window size
 float aspect;
@@ -91,13 +160,18 @@ TriMesh mesh;
 Mat4x4 model;
 Mat4x4 view;
 Mat4x4 projection;
+
+GLdouble ds = 0.01;
+Vec3f up(0, 1, 0);
 } // namespace Globals
 
 
 //
 //	Callbacks
 //
-static void error_callback(int error, const char* description) { fprintf(stderr, "Error: %s\n", description); }
+static void error_callback(int error, const char* description) {
+  fprintf(stderr, "Error: %s\n", description);
+}
 
 static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
   // Close on escape or Q
@@ -109,8 +183,24 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action, 
     case GLFW_KEY_Q:
       glfwSetWindowShouldClose(window, GL_TRUE);
       break;
-      // ToDo: update the viewing transformation matrix according to key presses
+
+    case GLFW_KEY_W:
+      Globals::key_state = KeyState::MOVE_FORWARD;
+      break;
+    case GLFW_KEY_S:
+      Globals::key_state = KeyState::MOVE_BACKWARD;
+      break;
+    case GLFW_KEY_A:
+      Globals::key_state = KeyState::MOVE_LEFT;
+      break;
+    case GLFW_KEY_D:
+      Globals::key_state = KeyState::MOVE_RIGHT;
+      break;
     }
+  }
+
+  if (action == GLFW_RELEASE) {
+    Globals::key_state = KeyState::NONE;
   }
 }
 
@@ -131,6 +221,45 @@ static void framebuffer_size_callback(GLFWwindow* window, int width, int height)
 void init_scene();
 
 
+static void init_view(Vec3f& eye, Vec3f& lookat) {
+  Vec3f w = normalize(eye - lookat);
+  Vec3f u = normalize(cross_product(Globals::up, w));
+  Vec3f v = normalize(cross_product(w, u));
+
+  float dx = -dot_product(eye, u);
+  float dy = -dot_product(eye, v);
+  float dz = -dot_product(eye, w);
+
+  Globals::view.m[0] = u[0];
+  Globals::view.m[1] = v[0];
+  Globals::view.m[2] = w[0];
+  Globals::view.m[3] = 0;
+
+  Globals::view.m[4] = u[1];
+  Globals::view.m[5] = v[1];
+  Globals::view.m[6] = w[1];
+  Globals::view.m[7] = 0;
+
+  Globals::view.m[8] = u[2];
+  Globals::view.m[9] = v[2];
+  Globals::view.m[10] = w[2];
+  Globals::view.m[11] = 0;
+
+  Globals::view.m[12] = dx;
+  Globals::view.m[13] = dy;
+  Globals::view.m[14] = dz;
+  Globals::view.m[15] = 1;
+}
+
+
+
+static void update_view(Vec3f& eye) {
+  Globals::view.m[12] = eye[0];
+  Globals::view.m[13] = eye[1];
+  Globals::view.m[14] = eye[2];
+}
+
+
 //
 //	Main
 //
@@ -143,6 +272,7 @@ int main(int argc, char* argv[]) {
     return 0;
   }
   Globals::mesh.print_details();
+
 
   // Forcibly scale the mesh vertices so that the entire model fits within a (-1,1) volume: the code below is a temporary measure that is needed to enable the entire model to be visible in the template app, before the student has defined the proper viewing and projection matrices
   // This code should eventually be replaced by the use of an appropriate projection matrix
@@ -181,6 +311,7 @@ int main(int argc, char* argv[]) {
     Globals::mesh.vertices[i] = mscale * Globals::mesh.vertices[i];
   }
   // The above can be removed once a proper projection matrix is defined
+
 
   // Set up the window variable
   GLFWwindow* window;
@@ -246,16 +377,52 @@ int main(int argc, char* argv[]) {
   glBindVertexArray(Globals::tris_vao);
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, Globals::faces_ibo[0]);
 
+  Vec3f eye(0, 0, 0);
+  Vec3f lookat(0, 0, -1);
+
+  init_view(eye, lookat);
+
   // Game loop
   while (!glfwWindowShouldClose(window)) {
 
     // Clear the color and depth buffers
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+    switch (Globals::key_state) {
+    case KeyState::NONE:
+      break;
+    case KeyState::MOVE_FORWARD:
+      eye[2] = eye[2] + Globals::ds;
+      update_view(eye);
+      break;
+    case KeyState::MOVE_BACKWARD:
+      eye[2] = eye[2] - Globals::ds;
+      update_view(eye);
+      break;
+    case KeyState::MOVE_LEFT:
+      eye[0] = eye[0] - Globals::ds;
+      update_view(eye);
+      break;
+    case KeyState::MOVE_RIGHT:
+      eye[0] = eye[0] + Globals::ds;
+      update_view(eye);
+      break;
+    }
+
+    Globals::view.print();
+    printf("\n");
+
+
     // Send updated info to the GPU
     glUniformMatrix4fv(shader.uniform("model"), 1, GL_FALSE, Globals::model.m);           // model transformation
     glUniformMatrix4fv(shader.uniform("view"), 1, GL_FALSE, Globals::view.m);             // viewing transformation
     glUniformMatrix4fv(shader.uniform("projection"), 1, GL_FALSE, Globals::projection.m); // projection matrix
+                                                                                          //
+    // Globals::model.print();
+    // Globals::view.print();
+    // Globals::projection.print();
+    //printf("%d\n", Globals::key_state);
+
 
     // Draw
     glDrawElements(GL_TRIANGLES, Globals::mesh.faces.size() * 3, GL_UNSIGNED_INT, 0);
