@@ -1,0 +1,13 @@
+
+#BasedOnStyle: Google
+AlignAfterOpenBracket: BlockIndent
+ContinuationIndentWidth: 2
+BinPackArguments: false
+BinPackParameters: false
+MaxEmptyLinesToKeep: 2
+DerivePointerAlignment: false
+PointerAlignment: Left
+PenaltyBreakAssignment: 0
+ColumnLimit: 0
+
+# https://clang.llvm.org/docs/ClangFormatStyleOptions.html
