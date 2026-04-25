@@ -19,7 +19,9 @@ enum class KeyState {
   MOVE_FORWARD,
   MOVE_BACKWARD,
   MOVE_LEFT,
-  MOVE_RIGHT
+  MOVE_RIGHT,
+  LOOK_LEFT,
+  LOOK_RIGHT
 };
 
 class Mat4x4 {
@@ -145,6 +147,21 @@ static inline const Vec3f normalize(const Vec3f& v) {
 }
 
 
+static inline Mat4x4 multiplyMatrices(const GLfloat A[16], const GLfloat B[16]) {
+  Mat4x4 result;
+  for (int col = 0; col < 4; ++col) {
+    for (int row = 0; row < 4; ++row) {
+      result.m[col * 4 + row] =
+        A[0 * 4 + row] * B[col * 4 + 0] +
+        A[1 * 4 + row] * B[col * 4 + 1] +
+        A[2 * 4 + row] * B[col * 4 + 2] +
+        A[3 * 4 + row] * B[col * 4 + 3];
+    }
+  }
+  return result;
+}
+
+
 //
 //	Global state variables
 //
@@ -160,8 +177,10 @@ TriMesh mesh;
 Mat4x4 model;
 Mat4x4 view;
 Mat4x4 projection;
+Mat4x4 view_rotation;
 
-GLdouble ds = 0.01;
+GLdouble ds = 0.1;
+GLdouble dtheta = 0.01;
 Vec3f up(0, 1, 0);
 } // namespace Globals
 
@@ -196,6 +215,12 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action, 
     case GLFW_KEY_D:
       Globals::key_state = KeyState::MOVE_RIGHT;
       break;
+    case GLFW_KEY_LEFT:
+      Globals::key_state = KeyState::LOOK_LEFT;
+      break;
+    case GLFW_KEY_RIGHT:
+      Globals::key_state = KeyState::LOOK_RIGHT;
+      break;
     }
   }
 
@@ -221,8 +246,8 @@ static void framebuffer_size_callback(GLFWwindow* window, int width, int height)
 void init_scene();
 
 
-static void init_view(Vec3f& eye, Vec3f& lookat) {
-  Vec3f w = normalize(eye - lookat);
+static void update_view(Vec3f& eye, Vec3f& lookat) {
+  Vec3f w = normalize(Globals::view_rotation * lookat);
   Vec3f u = normalize(cross_product(Globals::up, w));
   Vec3f v = normalize(cross_product(w, u));
 
@@ -252,11 +277,21 @@ static void init_view(Vec3f& eye, Vec3f& lookat) {
 }
 
 
+static void init_projection() {
+  float left = -0.1;
+  float right = 0.1;
+  float bottom = -0.1;
+  float top = 0.1;
+  float near = 0.1;
+  float far = 1000;
 
-static void update_view(Vec3f& eye) {
-  Globals::view.m[12] = eye[0];
-  Globals::view.m[13] = eye[1];
-  Globals::view.m[14] = eye[2];
+  Globals::projection.m[0] = (2 * near) / (left - right);
+  Globals::projection.m[5] = (2 * near) / (top - bottom);
+  Globals::projection.m[8] = (right + left) / (right - left);
+  Globals::projection.m[9] = (top + bottom) / (top - bottom);
+  Globals::projection.m[10] = -(far + near) / (far - near);
+  Globals::projection.m[11] = -1;
+  Globals::projection.m[14] = (-2 * far * near) / (far - near);
 }
 
 
@@ -272,45 +307,6 @@ int main(int argc, char* argv[]) {
     return 0;
   }
   Globals::mesh.print_details();
-
-
-  // Forcibly scale the mesh vertices so that the entire model fits within a (-1,1) volume: the code below is a temporary measure that is needed to enable the entire model to be visible in the template app, before the student has defined the proper viewing and projection matrices
-  // This code should eventually be replaced by the use of an appropriate projection matrix
-  // FYI: the model dimensions are: center = (0,0,0); height: 30.6; length: 40.3; width: 17.0
-  // find the extremum of the vertex locations (this approach works because the model is known to be centered; a more complicated method would be required in the general case)
-  float min, max, scale;
-  min = Globals::mesh.vertices[0][0];
-  max = Globals::mesh.vertices[0][0];
-  for (int i = 0; i < Globals::mesh.vertices.size(); ++i) {
-    if (Globals::mesh.vertices[i][0] < min)
-      min = Globals::mesh.vertices[i][0];
-    else if (Globals::mesh.vertices[i][0] > max)
-      max = Globals::mesh.vertices[i][0];
-    if (Globals::mesh.vertices[i][1] < min)
-      min = Globals::mesh.vertices[i][1];
-    else if (Globals::mesh.vertices[i][1] > max)
-      max = Globals::mesh.vertices[i][1];
-    if (Globals::mesh.vertices[i][2] < min)
-      min = Globals::mesh.vertices[i][2];
-    else if (Globals::mesh.vertices[i][2] > max)
-      max = Globals::mesh.vertices[i][2];
-  }
-  // work with positive numbers
-  if (min < 0)
-    min = -min;
-  // scale so that the component that is most different from 0 is mapped to 1 (or -1); all other values will then by definition fall between -1 and 1
-  if (max > min)
-    scale = 1 / max;
-  else
-    scale = 1 / min;
-
-  // scale the model vertices by brute force
-  Mat4x4 mscale;
-  mscale.make_scale(scale, scale, scale);
-  for (int i = 0; i < Globals::mesh.vertices.size(); ++i) {
-    Globals::mesh.vertices[i] = mscale * Globals::mesh.vertices[i];
-  }
-  // The above can be removed once a proper projection matrix is defined
 
 
   // Set up the window variable
@@ -379,8 +375,10 @@ int main(int argc, char* argv[]) {
 
   Vec3f eye(0, 0, 0);
   Vec3f lookat(0, 0, -1);
+  float rotation_angle = 0;
 
-  init_view(eye, lookat);
+  update_view(eye, lookat);
+  init_projection();
 
   // Game loop
   while (!glfwWindowShouldClose(window)) {
@@ -393,24 +391,55 @@ int main(int argc, char* argv[]) {
       break;
     case KeyState::MOVE_FORWARD:
       eye[2] = eye[2] + Globals::ds;
-      update_view(eye);
+      update_view(eye, lookat);
+      Globals::view.print();
+      printf("\n");
       break;
     case KeyState::MOVE_BACKWARD:
       eye[2] = eye[2] - Globals::ds;
-      update_view(eye);
+      update_view(eye, lookat);
+      Globals::view.print();
+      printf("\n");
       break;
     case KeyState::MOVE_LEFT:
       eye[0] = eye[0] - Globals::ds;
-      update_view(eye);
+      update_view(eye, lookat);
+      Globals::view.print();
+      printf("\n");
       break;
     case KeyState::MOVE_RIGHT:
       eye[0] = eye[0] + Globals::ds;
-      update_view(eye);
+      update_view(eye, lookat);
+      Globals::view.print();
+      printf("\n");
+      break;
+
+    case KeyState::LOOK_LEFT:
+      rotation_angle = rotation_angle - Globals::dtheta;
+      Globals::view_rotation.m[0] = std::cos(rotation_angle);
+      Globals::view_rotation.m[2] = -std::sin(rotation_angle);
+      Globals::view_rotation.m[8] = std::sin(rotation_angle);
+      Globals::view_rotation.m[10] = std::cos(rotation_angle);
+      update_view(eye, lookat);
+      Globals::view.print();
+      printf("\n");
+      break;
+
+    case KeyState::LOOK_RIGHT:
+      rotation_angle = rotation_angle + Globals::dtheta;
+      Globals::view_rotation.m[0] = std::cos(rotation_angle);
+      Globals::view_rotation.m[2] = -std::sin(rotation_angle);
+      Globals::view_rotation.m[8] = std::sin(rotation_angle);
+      Globals::view_rotation.m[10] = std::cos(rotation_angle);
+      update_view(eye, lookat);
+      Globals::view.print();
+      printf("\n");
       break;
     }
 
-    Globals::view.print();
-    printf("\n");
+    // Globals::view.print();
+    // std::cout << "rotation angle: " << rotation_angle << "\n";
+    // printf("\n");
 
 
     // Send updated info to the GPU
@@ -418,12 +447,6 @@ int main(int argc, char* argv[]) {
     glUniformMatrix4fv(shader.uniform("view"), 1, GL_FALSE, Globals::view.m);             // viewing transformation
     glUniformMatrix4fv(shader.uniform("projection"), 1, GL_FALSE, Globals::projection.m); // projection matrix
                                                                                           //
-    // Globals::model.print();
-    // Globals::view.print();
-    // Globals::projection.print();
-    //printf("%d\n", Globals::key_state);
-
-
     // Draw
     glDrawElements(GL_TRIANGLES, Globals::mesh.faces.size() * 3, GL_UNSIGNED_INT, 0);
 
