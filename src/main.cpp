@@ -112,6 +112,15 @@ static inline const Vec3f operator-(const Vec3f& u, const Vec3f& v) {
   return r;
 }
 
+static inline const Vec3f operator*(const float a, const Vec3f& v) {
+  Vec3f r(
+    a * v[0],
+    a * v[1],
+    a * v[2]
+  );
+  return r;
+}
+
 static inline const float dot_product(const Vec3f& u, const Vec3f& v) {
   return u[0] * v[0] +
          u[1] * v[1] +
@@ -182,6 +191,10 @@ Mat4x4 view_rotation;
 GLdouble ds = 0.1;
 GLdouble dtheta = 0.01;
 Vec3f up(0, 1, 0);
+
+Vec3f eye(0, -12, 0);
+Vec3f lookat(0, 0, -1);
+float rotation_angle = 0;
 } // namespace Globals
 
 
@@ -246,14 +259,30 @@ static void framebuffer_size_callback(GLFWwindow* window, int width, int height)
 void init_scene();
 
 
-static void update_view(Vec3f& eye, Vec3f& lookat) {
-  Vec3f w = normalize(Globals::view_rotation * lookat);
+static void update_view(KeyState key_state) {
+  if (key_state == KeyState::LOOK_LEFT)
+    Globals::rotation_angle -= Globals::dtheta;
+  if (key_state == KeyState::LOOK_RIGHT)
+    Globals::rotation_angle += Globals::dtheta;
+
+  Globals::view_rotation.m[0] = std::cos(Globals::rotation_angle);
+  Globals::view_rotation.m[2] = -std::sin(Globals::rotation_angle);
+  Globals::view_rotation.m[8] = std::sin(Globals::rotation_angle);
+  Globals::view_rotation.m[10] = std::cos(Globals::rotation_angle);
+
+  Vec3f w = normalize(Globals::view_rotation * Globals::lookat);
   Vec3f u = normalize(cross_product(Globals::up, w));
   Vec3f v = normalize(cross_product(w, u));
 
-  float dx = -dot_product(eye, u);
-  float dy = -dot_product(eye, v);
-  float dz = -dot_product(eye, w);
+
+  if (key_state == KeyState::MOVE_LEFT)
+    Globals::eye += Globals::ds * u;
+  if (key_state == KeyState::MOVE_RIGHT)
+    Globals::eye = Globals::eye - Globals::ds * u;
+  if (key_state == KeyState::MOVE_FORWARD)
+    Globals::eye = Globals::eye - Globals::ds * w;
+  if (key_state == KeyState::MOVE_BACKWARD)
+    Globals::eye = Globals::eye + Globals::ds * w;
 
   Globals::view.m[0] = u[0];
   Globals::view.m[1] = v[0];
@@ -270,9 +299,9 @@ static void update_view(Vec3f& eye, Vec3f& lookat) {
   Globals::view.m[10] = w[2];
   Globals::view.m[11] = 0;
 
-  Globals::view.m[12] = dx;
-  Globals::view.m[13] = dy;
-  Globals::view.m[14] = dz;
+  Globals::view.m[12] = -dot_product(Globals::eye, u);
+  Globals::view.m[13] = -dot_product(Globals::eye, v);
+  Globals::view.m[14] = -dot_product(Globals::eye, w);
   Globals::view.m[15] = 1;
 }
 
@@ -373,11 +402,9 @@ int main(int argc, char* argv[]) {
   glBindVertexArray(Globals::tris_vao);
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, Globals::faces_ibo[0]);
 
-  Vec3f eye(0, 0, 0);
-  Vec3f lookat(0, 0, -1);
   float rotation_angle = 0;
 
-  update_view(eye, lookat);
+  update_view(Globals::key_state);
   init_projection();
 
   // Game loop
@@ -386,61 +413,7 @@ int main(int argc, char* argv[]) {
     // Clear the color and depth buffers
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    switch (Globals::key_state) {
-    case KeyState::NONE:
-      break;
-    case KeyState::MOVE_FORWARD:
-      eye[2] = eye[2] + Globals::ds;
-      update_view(eye, lookat);
-      Globals::view.print();
-      printf("\n");
-      break;
-    case KeyState::MOVE_BACKWARD:
-      eye[2] = eye[2] - Globals::ds;
-      update_view(eye, lookat);
-      Globals::view.print();
-      printf("\n");
-      break;
-    case KeyState::MOVE_LEFT:
-      eye[0] = eye[0] - Globals::ds;
-      update_view(eye, lookat);
-      Globals::view.print();
-      printf("\n");
-      break;
-    case KeyState::MOVE_RIGHT:
-      eye[0] = eye[0] + Globals::ds;
-      update_view(eye, lookat);
-      Globals::view.print();
-      printf("\n");
-      break;
-
-    case KeyState::LOOK_LEFT:
-      rotation_angle = rotation_angle - Globals::dtheta;
-      Globals::view_rotation.m[0] = std::cos(rotation_angle);
-      Globals::view_rotation.m[2] = -std::sin(rotation_angle);
-      Globals::view_rotation.m[8] = std::sin(rotation_angle);
-      Globals::view_rotation.m[10] = std::cos(rotation_angle);
-      update_view(eye, lookat);
-      Globals::view.print();
-      printf("\n");
-      break;
-
-    case KeyState::LOOK_RIGHT:
-      rotation_angle = rotation_angle + Globals::dtheta;
-      Globals::view_rotation.m[0] = std::cos(rotation_angle);
-      Globals::view_rotation.m[2] = -std::sin(rotation_angle);
-      Globals::view_rotation.m[8] = std::sin(rotation_angle);
-      Globals::view_rotation.m[10] = std::cos(rotation_angle);
-      update_view(eye, lookat);
-      Globals::view.print();
-      printf("\n");
-      break;
-    }
-
-    // Globals::view.print();
-    // std::cout << "rotation angle: " << rotation_angle << "\n";
-    // printf("\n");
-
+    update_view(Globals::key_state);
 
     // Send updated info to the GPU
     glUniformMatrix4fv(shader.uniform("model"), 1, GL_FALSE, Globals::model.m);           // model transformation
