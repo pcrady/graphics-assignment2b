@@ -242,6 +242,23 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action, 
   }
 }
 
+static void init_projection(float aspect) {
+  float left = -0.1 * aspect;
+  float right = 0.1 * aspect;
+  float bottom = -0.1;
+  float top = 0.1;
+  float near = 0.1;
+  float far = 10000;
+
+  Globals::projection.m[0] = (2 * near) / (left - right);
+  Globals::projection.m[5] = (2 * near) / (top - bottom);
+  Globals::projection.m[8] = (right + left) / (right - left);
+  Globals::projection.m[9] = (top + bottom) / (top - bottom);
+  Globals::projection.m[10] = -(far + near) / (far - near);
+  Globals::projection.m[11] = -1;
+  Globals::projection.m[14] = (-2 * far * near) / (far - near);
+}
+
 static void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
   int win_width, win_height;
   float aspect;
@@ -251,7 +268,7 @@ static void framebuffer_size_callback(GLFWwindow* window, int width, int height)
 
   glViewport(0, 0, width, height);
 
-  // ToDo: update the perspective matrix as the window size changes
+  init_projection(aspect);
 }
 
 
@@ -303,24 +320,6 @@ static void update_view(KeyState key_state) {
   Globals::view.m[13] = -dot_product(Globals::eye, v);
   Globals::view.m[14] = -dot_product(Globals::eye, w);
   Globals::view.m[15] = 1;
-}
-
-
-static void init_projection() {
-  float left = -0.1;
-  float right = 0.1;
-  float bottom = -0.1;
-  float top = 0.1;
-  float near = 0.1;
-  float far = 1000;
-
-  Globals::projection.m[0] = (2 * near) / (left - right);
-  Globals::projection.m[5] = (2 * near) / (top - bottom);
-  Globals::projection.m[8] = (right + left) / (right - left);
-  Globals::projection.m[9] = (top + bottom) / (top - bottom);
-  Globals::projection.m[10] = -(far + near) / (far - near);
-  Globals::projection.m[11] = -1;
-  Globals::projection.m[14] = (-2 * far * near) / (far - near);
 }
 
 
@@ -405,7 +404,7 @@ int main(int argc, char* argv[]) {
   float rotation_angle = 0;
 
   update_view(Globals::key_state);
-  init_projection();
+  init_projection(1);
 
   // Game loop
   while (!glfwWindowShouldClose(window)) {
