@@ -20,6 +20,8 @@ enum class KeyState {
   MOVE_BACKWARD,
   MOVE_LEFT,
   MOVE_RIGHT,
+  MOVE_UP,
+  MOVE_DOWN,
   LOOK_LEFT,
   LOOK_RIGHT
 };
@@ -228,6 +230,12 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action, 
     case GLFW_KEY_D:
       Globals::key_state = KeyState::MOVE_RIGHT;
       break;
+    case GLFW_KEY_LEFT_BRACKET:
+      Globals::key_state = KeyState::MOVE_DOWN;
+      break;
+    case GLFW_KEY_RIGHT_BRACKET:
+      Globals::key_state = KeyState::MOVE_UP;
+      break;
     case GLFW_KEY_LEFT:
       Globals::key_state = KeyState::LOOK_LEFT;
       break;
@@ -300,6 +308,10 @@ static void update_view(KeyState key_state) {
     Globals::eye = Globals::eye - Globals::ds * w;
   if (key_state == KeyState::MOVE_BACKWARD)
     Globals::eye = Globals::eye + Globals::ds * w;
+  if (key_state == KeyState::MOVE_UP)
+    Globals::eye = Globals::eye + Globals::ds * v;
+  if (key_state == KeyState::MOVE_DOWN)
+    Globals::eye = Globals::eye - Globals::ds * v;
 
   Globals::view.m[0] = u[0];
   Globals::view.m[1] = v[0];
